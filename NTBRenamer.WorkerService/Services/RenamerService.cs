@@ -12,12 +12,24 @@ public class RenamerService : IRenamerService
     #region Private Properties
     private readonly string[] directories =
     [
-        @"Y:\Departments\NTB-Archives\Imaging\cdv1\bol\z4",
-        @"Y:\Departments\NTB-Archives\Imaging\cdv1\bol\z5",
-        @"Y:\Departments\NTB-Archives\Imaging\cdv1\bol\z6",
-        @"Y:\Departments\NTB-Archives\Imaging\cdv1\bol\z7",
-        @"Y:\Departments\NTB-Archives\Imaging\cdv1\bol\z8",
-        @"Y:\Departments\NTB-Archives\Imaging\cdv1\bol\z9"
+        @"Y:\Departments\NTB-Archives\Imaging\cdv3\bol\z1",
+        @"Y:\Departments\NTB-Archives\Imaging\cdv3\bol\z2",
+        @"Y:\Departments\NTB-Archives\Imaging\cdv3\bol\z3",
+        @"Y:\Departments\NTB-Archives\Imaging\cdv3\bol\z4",
+        @"Y:\Departments\NTB-Archives\Imaging\cdv3\bol\z5",
+        @"Y:\Departments\NTB-Archives\Imaging\cdv3\bol\z6",
+        @"Y:\Departments\NTB-Archives\Imaging\cdv3\bol\z7",
+        @"Y:\Departments\NTB-Archives\Imaging\cdv3\bol\z8",
+        @"Y:\Departments\NTB-Archives\Imaging\cdv3\bol\z9",
+        @"Y:\Departments\NTB-Archives\Imaging\cdv4\bol\z1",
+        @"Y:\Departments\NTB-Archives\Imaging\cdv4\bol\z2",
+        @"Y:\Departments\NTB-Archives\Imaging\cdv4\bol\z3",
+        @"Y:\Departments\NTB-Archives\Imaging\cdv4\bol\z4",
+        @"Y:\Departments\NTB-Archives\Imaging\cdv4\bol\z5",
+        @"Y:\Departments\NTB-Archives\Imaging\cdv4\bol\z6",
+        @"Y:\Departments\NTB-Archives\Imaging\cdv4\bol\z7",
+        @"Y:\Departments\NTB-Archives\Imaging\cdv4\bol\z8",
+        @"Y:\Departments\NTB-Archives\Imaging\cdv4\bol\z9"
     ];
     #endregion
 
