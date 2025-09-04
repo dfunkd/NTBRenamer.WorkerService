@@ -7,6 +7,7 @@ IHost host = Host.CreateDefaultBuilder(args)
     .ConfigureServices((hostContext, services) =>
     {
         services.AddMemoryCache();
+        services.AddLogging(configure => configure.AddConsole());
 
         services.AddOptions();
         services.Configure<AppSettings>(hostContext.Configuration.GetSection("ApiSettings"));

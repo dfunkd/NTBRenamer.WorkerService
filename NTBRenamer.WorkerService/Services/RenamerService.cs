@@ -1,4 +1,5 @@
 ﻿using NTBRenamer.WorkerService.Core;
+using System.Diagnostics;
 
 namespace NTBRenamer.WorkerService.Services;
 
@@ -7,103 +8,139 @@ public interface IRenamerService
     Task ProcessFiles(CancellationToken cancellationToken = default);
 }
 
-public class RenamerService : IRenamerService
+public class RenamerService(ILogger<RenamerService> logger) : IRenamerService
 {
     #region Private Properties
     private readonly string[] directories =
     [
-        @"Y:\Departments\NTB-Archives\Imaging\cdv3\bol\z1",
-        @"Y:\Departments\NTB-Archives\Imaging\cdv3\bol\z2",
-        @"Y:\Departments\NTB-Archives\Imaging\cdv3\bol\z3",
-        @"Y:\Departments\NTB-Archives\Imaging\cdv3\bol\z4",
-        @"Y:\Departments\NTB-Archives\Imaging\cdv3\bol\z5",
-        @"Y:\Departments\NTB-Archives\Imaging\cdv3\bol\z6",
-        @"Y:\Departments\NTB-Archives\Imaging\cdv3\bol\z7",
-        @"Y:\Departments\NTB-Archives\Imaging\cdv3\bol\z8",
-        @"Y:\Departments\NTB-Archives\Imaging\cdv3\bol\z9",
-        @"Y:\Departments\NTB-Archives\Imaging\cdv4\bol\z1",
-        @"Y:\Departments\NTB-Archives\Imaging\cdv4\bol\z2",
-        @"Y:\Departments\NTB-Archives\Imaging\cdv4\bol\z3",
-        @"Y:\Departments\NTB-Archives\Imaging\cdv4\bol\z4",
-        @"Y:\Departments\NTB-Archives\Imaging\cdv4\bol\z5",
-        @"Y:\Departments\NTB-Archives\Imaging\cdv4\bol\z6",
-        @"Y:\Departments\NTB-Archives\Imaging\cdv4\bol\z7",
-        @"Y:\Departments\NTB-Archives\Imaging\cdv4\bol\z8",
-        @"Y:\Departments\NTB-Archives\Imaging\cdv4\bol\z9"
+        @"Y:\Departments\NTB-Archives\Imaging\cdv1",
+        @"Y:\Departments\NTB-Archives\Imaging\cdv2",
+        @"Y:\Departments\NTB-Archives\Imaging\cdv3",
+        @"Y:\Departments\NTB-Archives\Imaging\cdv4"
     ];
+
+    private readonly List<string> Directories = [];
+    private readonly List<string> Files = [];
     #endregion
 
     #region Private Functions
     private async Task PopulateAllDirectories(CancellationToken cancellationToken = default)
     {
         List<Task> tasks = [];
+
         foreach (var dir in directories)
-        {
-            tasks.Add(Task.Run(async () =>
+            tasks.Add(Task.Run(() =>
             {
-                List<string> dirs = [];
-                dirs.Add(dir);
-                dirs.AddRange(GetDirectories(dir));
-                await PopulateAllFiles(dirs, cancellationToken);
+                Directories.Add(dir);
+                Directories.AddRange(GetDirectories(dir));
             }, cancellationToken));
-        }
+
+        await Task.WhenAll(tasks);
+    }
+
+    private async Task PopulateAllFiles(CancellationToken cancellationToken = default)
+    {
+        List<Task> tasks = [];
+        object fileslock = new();
+
+        foreach (var dir in Directories)
+            tasks.Add(Task.Run(() =>
+            {
+                List<string> filesToAdd = [.. Directory.GetFiles(dir)];
+                if (filesToAdd.Count > 0)
+                    lock (fileslock)
+                        Files.AddRange(filesToAdd);
+            }, cancellationToken));
+
         await Task.WhenAll([.. tasks]);
     }
 
-    private async Task PopulateAllFiles(List<string> dirs, CancellationToken cancellationToken = default)
+    private async Task ProcessAllFiles(CancellationToken cancellationToken = default)
     {
         List<Task> tasks = [];
-        foreach (var dir in dirs)
-        {
-            tasks.Add(Task.Run(async () =>
-            {
-                List<string> files = [];
-                files.AddRange(Directory.GetFiles(dir));
-                ProcessAllFiles(files, cancellationToken);
-                await RunBatchProcess(files, cancellationToken);
-            }, cancellationToken));
-        }
-        await Task.WhenAll([.. tasks]);
-    }
 
-    private void ProcessAllFiles(List<string> files, CancellationToken cancellationToken = default)
-    {
-        List<Task> tasks = [];
         int count = 0, takeQty = 100;
-        for (int i = 0; i < files.Count; i = i + takeQty)
+        for (int i = 0; i < Files.Count; i = i + takeQty)
         {
             int skip = takeQty * count;
-            int take = files.Count - skip > takeQty ? takeQty : files.Count - skip;
-            tasks.Add(Task.Run(() => ProcessFiles([.. files.Skip(skip).Take(take)]), cancellationToken));
+            int take = Files.Count - skip > takeQty ? takeQty : Files.Count - skip;
+            tasks.Add(Task.Run(() => ProcessFiles([.. Files.Skip(skip).Take(take)]), cancellationToken));
             count++;
         }
-    }
 
-    private async Task RunBatchProcess(List<string> files, CancellationToken cancellationToken = default)
-    {
-        List<Task> tasks = [];
-        int count = 0, takeQty = 100;
-        List<string> batchFiles = [.. files.Where(w => w.EndsWith(".ps", StringComparison.InvariantCultureIgnoreCase))];
-        for (int i = 0; i < files.Count; i = i + takeQty)
-        {
-            int skip = takeQty * count;
-            int take = batchFiles.Count - skip > takeQty ? takeQty : batchFiles.Count - skip;
-            tasks.Add(Task.Run(() => ExecuteBatchFile([.. batchFiles.Skip(skip).Take(take)]), cancellationToken));
-            count++;
-        }
         await Task.WhenAll([.. tasks]);
     }
 
-    public void ExecuteBatchFile(List<string> files)
+    private async Task ProcessBatchFile(CancellationToken cancellationToken = default)
     {
-        foreach (string file in files)
+        List<Task> tasks = [];
+        Stopwatch stopwatch = Stopwatch.StartNew();
+
+        int count = 0, takeQty = 100;
+        for (int i = 0; i < Files.Count; i = i + takeQty)
         {
-            string output = file.Replace(".ps", ".pdf");
-            BatchFileExecutor.ConvertToPdf(file, output);
+            int skip = takeQty * count;
+            int take = Files.Count - skip > takeQty ? takeQty : Files.Count - skip;
+            tasks.Add(Task.Run(async () => await RunBatchProcess([.. Files.Skip(skip).Take(take)]), cancellationToken));
+            count++;
         }
+
+        await Task.WhenAll([.. tasks]);
+
+        stopwatch.Stop();
+
+        Console.WriteLine($"Processed batch file in {stopwatch.Elapsed.Minutes:D2}:{stopwatch.Elapsed.Seconds:D2}");
     }
 
-    public void ProcessFiles(List<string> files)
+    private async Task FileCleanup(CancellationToken cancellationToken = default)
+    {
+        List<Task> tasks = [];
+        Stopwatch stopwatch = Stopwatch.StartNew();
+
+        await Task.Run(() =>
+        {
+            List<string> pdfs = [.. Files.Where(w => w.EndsWith(".pdf", StringComparison.InvariantCultureIgnoreCase))];
+            List<string> pss = [.. Files.Where(w => w.EndsWith(".ps", StringComparison.InvariantCultureIgnoreCase))];
+            List<string> oss = [.. Files.Where(w => w.EndsWith(".octet-stream", StringComparison.InvariantCultureIgnoreCase))];
+
+            foreach (string pdf in pdfs)
+            {
+                string? ps = pss.FirstOrDefault(f => f == pdf.Replace(".pdf", ".ps", StringComparison.InvariantCultureIgnoreCase));
+                if (!string.IsNullOrWhiteSpace(ps))
+                {
+                    try
+                    {
+                        File.Delete(ps);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"{ps} failed to delete: {ex.Message}.");
+                    }
+                }
+
+                string? os = oss.FirstOrDefault(f => f == pdf.Replace(".pdf", ".octet-stream", StringComparison.InvariantCultureIgnoreCase));
+                if (!string.IsNullOrWhiteSpace(os))
+                {
+                    try
+                    {
+                        File.Delete(os);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"{os} failed to delete: {ex.Message}.");
+                    }
+                }
+            }
+        }, cancellationToken);
+
+        stopwatch.Stop();
+
+        Console.WriteLine($"Files cleanup {stopwatch.Elapsed.Minutes:D2}:{stopwatch.Elapsed.Seconds:D2}");
+    }
+    #endregion
+
+    #region Private Static Functions
+    private static void ProcessFiles(List<string> files)
     {
         foreach (string file in files)
         {
@@ -124,6 +161,49 @@ public class RenamerService : IRenamerService
 
             File.Move(file, Path.ChangeExtension(file, ext));
         }
+    }
+
+    private static async Task RunBatchProcess(List<string> files)
+    {
+        List<Task> tasks = [];
+
+        tasks.Add(Task.Run(() =>
+        {
+            List<string> psFiles = [.. files.Where(w => w.EndsWith(".ps", StringComparison.InvariantCultureIgnoreCase))];
+            psFiles.ForEach(file =>
+            {
+                string output = file.Replace(".ps", ".pdf");
+                if (!File.Exists(output)) //Run Batch file
+                    try
+                    {
+                        BatchFileExecutor.ConvertToPdf(file, output);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"{file} failed batch process. ({ex.Message})");
+                    }
+            });
+        }));
+
+        tasks.Add(Task.Run(() =>
+        {
+            List<string> osFiles = [.. files.Where(w => w.EndsWith(".octet-stream", StringComparison.InvariantCultureIgnoreCase))];
+            osFiles.ForEach(file =>
+            {
+                string output = file.Replace(".octet-stream", ".pdf");
+                if (!File.Exists(output)) //Run Batch file
+                    try
+                    {
+                        BatchFileExecutor.ConvertToPdf(file, output);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"{file} failed batch process. ({ex.Message})");
+                    }
+            });
+        }));
+
+        await Task.WhenAll([.. tasks]);
     }
 
     private static List<string> GetDirectories(string path, string searchPattern)
@@ -154,25 +234,45 @@ public class RenamerService : IRenamerService
 
     public async Task ProcessFiles(CancellationToken cancellationToken = default)
     {
-        Console.WriteLine($"Started processing files at {DateTime.Now:MM dd, yyyy HH:mm:ss}");
+        Stopwatch stopwatch = Stopwatch.StartNew();
 
-        Console.WriteLine($"Started populating directories at {DateTime.Now:MM dd, yyyy HH:mm:ss}");
+        logger.LogInformation($"Started processing files at {DateTime.Now:MM dd, yyyy HH:mm:ss}");
+
+        //Populate Directories
         await PopulateAllDirectories(cancellationToken);
-        /*
-        Console.WriteLine($"Completed populating directories at {DateTime.Now:MM dd, yyyy HH:mm:ss}");
-        
-        Console.WriteLine($"Started populating files at {DateTime.Now:MM dd, yyyy HH:mm:ss}");
-        await PopulateAllFiles(cancellationToken);
-        Console.WriteLine($"Completed populating files at {DateTime.Now:MM dd, yyyy HH:mm:ss}");
+        stopwatch.Stop();
+        logger.LogInformation($"Directories populated in {stopwatch.Elapsed.Minutes:D2}:{stopwatch.Elapsed.Seconds:D2}");
 
-        Console.WriteLine($"Started processing files at {DateTime.Now:MM dd, yyyy HH:mm:ss}");
-        await ProcessAllFiles(cancellationToken);
-        Console.WriteLine($"Completed processing files at {DateTime.Now:MM dd, yyyy HH:mm:ss}");
+        //Populate Files to Process
+        stopwatch = Stopwatch.StartNew();
+        await Task.Run(async () => await PopulateAllFiles(cancellationToken), cancellationToken);
+        stopwatch.Stop();
+        logger.LogInformation($"Files populated in {stopwatch.Elapsed.Minutes:D2}:{stopwatch.Elapsed.Seconds:D2}");
 
-        Console.WriteLine($"Started running batch file at {DateTime.Now:MM dd, yyyy HH:mm:ss}");
-        await RunBatchProcess(cancellationToken);
-        Console.WriteLine($"Completed running batch file at {DateTime.Now:MM dd, yyyy HH:mm:ss}");
-        */
-        Console.WriteLine($"Stopped processing files at {DateTime.Now:MM dd, yyyy HH:mm:ss}");
+        //Process Files that don't need Batch File
+        stopwatch = Stopwatch.StartNew();
+        await Task.Run(() => ProcessAllFiles(cancellationToken), cancellationToken);
+        stopwatch.Stop();
+        logger.LogInformation($"Files processed in {stopwatch.Elapsed.Minutes:D2}:{stopwatch.Elapsed.Seconds:D2}");
+
+        //Initial File Cleanup so there are no duplicate PDF files created by the Batch File
+        stopwatch = Stopwatch.StartNew();
+        await FileCleanup(cancellationToken);
+        stopwatch.Stop();
+        logger.LogInformation($"Files cleaned up in {stopwatch.Elapsed.Minutes:D2}:{stopwatch.Elapsed.Seconds:D2}");
+
+        //Run the Batch File to convert all .ps files to .pdf files
+        stopwatch = Stopwatch.StartNew();
+        await ProcessBatchFile(cancellationToken);
+        stopwatch.Stop();
+        logger.LogInformation($"Batch File ran in {stopwatch.Elapsed.Minutes:D2}:{stopwatch.Elapsed.Seconds:D2}");
+
+        //Final File Cleanup to remove .ps files that have .pdf files created from them
+        stopwatch = Stopwatch.StartNew();
+        await FileCleanup(cancellationToken);
+        stopwatch.Stop();
+        logger.LogInformation($"Files cleaned up in {stopwatch.Elapsed.Minutes:D2}:{stopwatch.Elapsed.Seconds:D2}");
+
+        logger.LogInformation($"Stopped processing files at {DateTime.Now:MM dd, yyyy HH:mm:ss}");
     }
 }

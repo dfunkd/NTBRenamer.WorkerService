@@ -7,7 +7,8 @@ public class NTBRenamerWorker(ILogger<NTBRenamerWorker> logger, IRenamerService 
     private Timer _timer = null;
     private CancellationToken _cancellationToken = default;
     private int _minuteCount = 0;
-    private bool hasRun = false;
+    private int runCount = 0;
+    private bool isRunning = false;
 
     public override Task StartAsync(CancellationToken cancellationToken = default)
     {
@@ -32,9 +33,9 @@ public class NTBRenamerWorker(ILogger<NTBRenamerWorker> logger, IRenamerService 
     {
         _cancellationToken.ThrowIfCancellationRequested();
 
-        if (hasRun)
+        if (isRunning)
             return;
-        hasRun = true;
+        isRunning = true;
 
         _minuteCount++;
 
@@ -44,6 +45,9 @@ public class NTBRenamerWorker(ILogger<NTBRenamerWorker> logger, IRenamerService 
 
         logger.Log(LogLevel.Information, "Stoped Processing...");
 
+        isRunning = false;
+
         _minuteCount = 0;
+        runCount++;
     }
 }
